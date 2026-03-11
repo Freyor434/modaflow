@@ -1323,17 +1323,20 @@ if(FB_CONFIGURED){
   setFbStatus('offline','Modo Local');
 }
 
-// Verificar se admin fundador já existe → bloquear aba
-if(FB_CONFIGURED && fbDB){
-  fbDB.ref('sistema/adminFundadorCriado').get().then(snap=>{
-    if(snap.val()===true){
-      const btn = document.getElementById('ltab-primeiro');
-      if(btn){ btn.classList.add('bloqueada'); btn.title='Admin já criado'; }
-      // Se estiver na aba primeiro acesso, voltar para entrar
-      if(document.getElementById('lpanel-primeiro')?.style.display==='block') setLoginTab('entrar');
-    }
-  }).catch(()=>{});
-}
+  // Verificar se admin fundador já existe → bloquear aba
+  if(FB_CONFIGURED && fbDB){
+    fbDB.ref('sistema/adminFundadorCriado').on('value', snap=>{
+      if(snap.val()===true){
+        const btn = document.getElementById('ltab-primeiro');
+        if(btn){ btn.classList.add('bloqueada'); btn.title='Admin já criado'; }
+        // Se estiver na aba primeiro acesso, voltar para entrar
+        if(document.getElementById('lpanel-primeiro')?.style.display==='block') setLoginTab('entrar');
+      } else {
+        const btn = document.getElementById('ltab-primeiro');
+        if(btn){ btn.classList.remove('bloqueada'); btn.title=''; }
+      }
+    });
+  }
 
 // ─────────────────────────────────────────
 // STATUS INDICATOR
@@ -1435,6 +1438,13 @@ async function doPrimeiroAcesso(){
     // Modo local
     const users = JSON.parse(localStorage.getItem('mf_users')||'[]');
     if(users.find(x=>x.email===email)){ document.getElementById('primeiro-err').textContent='Este email já está cadastrado.'; document.getElementById('primeiro-err').style.display='block'; return; }
+    
+    // Bloqueio de Admin no modo local se já existir um
+    if(nivel==='admin' && users.find(x=>x.nivel==='admin')){
+      document.getElementById('primeiro-err').textContent='Já existe um administrador. Apenas ele pode criar outros.';
+      document.getElementById('primeiro-err').style.display='block'; return;
+    }
+
     users.push({email, senha:btoa(senha), nome, nivel});
     localStorage.setItem('mf_users', JSON.stringify(users));
     document.getElementById('primeiro-ok').textContent='✅ Conta criada! Faça login na aba Entrar.';
@@ -1443,6 +1453,13 @@ async function doPrimeiroAcesso(){
   }
 
   try{
+    // Verificar novamente se já existe admin antes de criar
+    const snap = await fbDB.ref('sistema/adminFundadorCriado').get();
+    if(snap.val()===true && nivel==='admin'){
+      document.getElementById('primeiro-err').textContent='Já existe um administrador. Apenas ele pode criar outros.';
+      document.getElementById('primeiro-err').style.display='block'; return;
+    }
+
     const cred = await fbAuth.createUserWithEmailAndPassword(email, senha);
     await cred.user.updateProfile({displayName: nome});
     await fbDB.ref('usuarios/'+cred.user.uid).set({nome, email, nivel, criadoEm: Date.now()});
